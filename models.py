@@ -12,7 +12,7 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-ADMIN_EMAIL = "kkmalacas@mcm.edu.ph"
+ADMIN_EMAIL = "dncanada@mcm.edu.ph"
 
 def _check_admin(email):
     return bool(email and ("admin" in email or email == ADMIN_EMAIL))
