@@ -12,27 +12,41 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
+ADMIN_EMAIL = "kkmalacas@mcm.edu.ph"
+
+def _check_admin(email):
+    return bool(email and ("admin" in email or email == ADMIN_EMAIL))
+
 def authenticate_user(email, password):
     try:
         response = supabase.auth.sign_in_with_password({"email": email, "password": password})
         user = response.user
-        
-        # Check if the user has an admin role or metadata flag in Supabase, 
-        # or you can check if their email matches an institutional admin email.
-        # For this setup, we look at user metadata or treat specific emails as admin.
-        is_admin = False
-        if user and user.email:
-            # Example: check user metadata or hardcode specific admin email domain/address
-            if "admin" in user.email or user.email == "kkmalacas@mcm.edu.ph":
-                is_admin = True
-                
+        session = response.session
+
         return {
             "success": True,
             "email": user.email,
-            "is_admin": is_admin
+            "is_admin": _check_admin(user.email),
+            "refresh_token": session.refresh_token,
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+def restore_session(refresh_token):
+    """Restore a login from a saved refresh token (used after a page refresh)."""
+    try:
+        response = supabase.auth.refresh_session(refresh_token)
+        user = response.user
+        session = response.session
+        if not user or not session:
+            return None
+        return {
+            "email": user.email,
+            "is_admin": _check_admin(user.email),
+            "refresh_token": session.refresh_token,  # refresh tokens rotate
+        }
+    except Exception:
+        return None
 
 def save_to_supabase(post, image_file=None):
     image_url = None
@@ -65,17 +79,17 @@ def load_database(categories_list):
     purge_expired_claims()
     response = supabase.table("posts").select("*").execute()
     data = response.data
-    
+
     loaded_posts = []
     for d in data:
         user = User(d["username"], d["institutional_id"])
         cat = next((c for c in categories_list if c.category_name == d["category_name"]), categories_list[3])
-        
+
         item = Item(d["item_name"], d["description"], cat, campus_location=d.get("campus_location", "RSY Building"))
         item.image_url = d.get("image_url")
         item.tracking.current_status = d.get("status", "Lost")
         item.tracking.date_claimed = d.get("date_claimed")
-        
+
         post = Post(d["post_id"], d["date_posted"], user, item)
         loaded_posts.append(post)
     return loaded_posts
