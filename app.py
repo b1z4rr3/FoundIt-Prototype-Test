@@ -1,5 +1,4 @@
 # app.py
-import time
 import streamlit as st
 import datetime
 import extra_streamlit_components as stx
@@ -10,6 +9,7 @@ st.set_page_config(page_title="FoundIt - Campus Lost & Found", page_icon="", lay
 
 COOKIE_NAME = "foundit_refresh_token"
 COOKIE_DAYS = 7
+DEBUG = True  # set to False once login persistence works
 
 cookie_manager = stx.CookieManager()
 
@@ -32,24 +32,50 @@ if "current_user" not in st.session_state:
 if "logged_out" not in st.session_state:
     st.session_state.logged_out = False
 
+if "pending_token" not in st.session_state:
+    st.session_state.pending_token = None
+
+if "pending_delete" not in st.session_state:
+    st.session_state.pending_delete = False
+
+if "restore_error" not in st.session_state:
+    st.session_state.restore_error = None
+
 # --- AUTO-LOGIN FROM COOKIE (survives page refresh) ---
 if not st.session_state.current_user and not st.session_state.logged_out:
     saved_token = cookie_manager.get(COOKIE_NAME)
     if saved_token:
         restored = restore_session(saved_token)
-        if restored:
+        if restored and "error" not in restored:
             st.session_state.current_user = User(
                 username=restored["email"].split("@")[0],
                 institutional_id=restored["email"],
                 is_admin=restored["is_admin"],
             )
-            cookie_manager.set(
-                COOKIE_NAME,
-                restored["refresh_token"],
-                expires_at=datetime.datetime.now() + datetime.timedelta(days=COOKIE_DAYS),
-            )
-            time.sleep(0.5)  # give the browser a moment to store the new cookie
+            # The new (rotated) token gets written to the cookie on the next run
+            st.session_state.pending_token = restored["refresh_token"]
             st.rerun()
+        elif restored:
+            st.session_state.restore_error = restored["error"]
+
+# --- WRITE / CLEAR THE COOKIE (done in a run that finishes normally, no rerun after) ---
+if st.session_state.pending_token and st.session_state.current_user:
+    cookie_manager.set(
+        COOKIE_NAME,
+        st.session_state.pending_token,
+        expires_at=datetime.datetime.now() + datetime.timedelta(days=COOKIE_DAYS),
+    )
+    st.session_state.pending_token = None
+
+if st.session_state.pending_delete and not st.session_state.current_user:
+    cookie_manager.delete(COOKIE_NAME)
+    st.session_state.pending_delete = False
+
+if DEBUG:
+    with st.expander("Debug (remove later)"):
+        st.write("Cookies the browser sent:", list(cookie_manager.get_all().keys()))
+        st.write("Has foundit cookie:", bool(cookie_manager.get(COOKIE_NAME)))
+        st.write("Restore error:", st.session_state.restore_error)
 
 st.title("FoundIt: Campus Lost & Found Hub")
 st.caption(f"{school.get_details()}")
@@ -70,12 +96,7 @@ if not st.session_state.current_user:
                 logged_user = User(username=email.split("@")[0], institutional_id=email, is_admin=auth_result["is_admin"])
                 st.session_state.current_user = logged_user
                 st.session_state.logged_out = False
-                cookie_manager.set(
-                    COOKIE_NAME,
-                    auth_result["refresh_token"],
-                    expires_at=datetime.datetime.now() + datetime.timedelta(days=COOKIE_DAYS),
-                )
-                time.sleep(0.5)  # give the browser a moment to store the cookie
+                st.session_state.pending_token = auth_result["refresh_token"]
                 st.rerun()
             else:
                 st.error(f"Authentication failed: {auth_result['error']}")
@@ -84,10 +105,9 @@ else:
     st.sidebar.caption(f"Role: {'Administrator' if st.session_state.current_user.is_admin else 'Student/Faculty'}")
 
     if st.sidebar.button("Logout"):
-        cookie_manager.delete(COOKIE_NAME)
         st.session_state.current_user = None
         st.session_state.logged_out = True
-        time.sleep(0.5)  # give the browser a moment to clear the cookie
+        st.session_state.pending_delete = True
         st.rerun()
 
     st.sidebar.markdown("---")
