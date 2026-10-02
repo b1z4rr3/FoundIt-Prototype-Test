@@ -39,14 +39,14 @@ def restore_session(refresh_token):
         user = response.user
         session = response.session
         if not user or not session:
-            return None
+            return {"error": "No user/session returned"}
         return {
             "email": user.email,
             "is_admin": _check_admin(user.email),
             "refresh_token": session.refresh_token,  # refresh tokens rotate
         }
-    except Exception:
-        return None
+    except Exception as e:
+        return {"error": str(e)}
 
 def save_to_supabase(post, image_file=None):
     image_url = None
