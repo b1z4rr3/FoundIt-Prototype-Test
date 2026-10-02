@@ -103,14 +103,11 @@ def update_status_in_supabase(post_id, new_status):
 
 def purge_expired_claims():
     threshold = (datetime.now() - timedelta(days=7)).isoformat()
-    try:
-        supabase.table("posts") \
-            .delete() \
-            .eq("status", "Claimed") \
-            .lt("date_claimed", threshold) \
-            .execute()
-    except Exception as e:
-        st.error(f"Purge failed: {e}")
+    supabase.table("posts") \
+        .delete() \
+        .eq("status", "Claimed") \
+        .lt("date_claimed", threshold) \
+        .execute()
 
 # --- OOP Classes ---
 class Institution:
